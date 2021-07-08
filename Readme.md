@@ -289,7 +289,6 @@ For ST Nucleo-144 dev board:
 
 ```
 pio run -e nucleo
-
 ```
 
 ### Flashing
@@ -306,5 +305,4 @@ For ST Nucleo-144 dev board:
 
 ```
 pio run -e nucleo --target upload
-
 ```
