@@ -45,7 +45,8 @@ static CAN_HandleTypeDef hcan;
 void can_init(void)
 {
 	/*
-		CAN baud rate configured to 100kbps
+		Input clock is 36MHz
+		CAN baud rate configured to 1Mbps
 		Determine bit timings with a calculator such as http://www.bittiming.can-wiki.info/
 	*/
 
@@ -60,7 +61,7 @@ void can_init(void)
 
 	// configure peripheral
 	hcan.Instance = CAN;
-	hcan.Init.Prescaler = 20;
+	hcan.Init.Prescaler = 2;
 	hcan.Init.Mode = CAN_MODE_NORMAL;
 	hcan.Init.SyncJumpWidth = CAN_SJW_1TQ;
 	hcan.Init.TimeSeg1 = CAN_BS1_15TQ;
