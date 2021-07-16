@@ -14,7 +14,7 @@
 #define FW_NAME		"Autotank LED Controller"
 
 #define VER_MAJOR	1
-#define VER_MINOR	0
+#define VER_MINOR	1
 #define VER_PATCH	0
 
 
