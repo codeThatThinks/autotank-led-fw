@@ -9,6 +9,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <string.h>
 #include <stm32f3xx_hal.h>
 
 #include "can.h"
@@ -29,12 +30,17 @@
 #define CAN_PORT	GPIOA
 #define CAN_PINS	GPIO_PIN_12 | GPIO_PIN_11
 
+#define CAN_BUF_SIZE	16
+
 
 //------------------------------------------------------------------------------
 // Private Variables
 //------------------------------------------------------------------------------
 
 static CAN_HandleTypeDef hcan;
+static can_msg_t buffer[CAN_BUF_SIZE];
+static size_t buf_write_pos;
+static size_t buf_read_pos;
 
 
 //------------------------------------------------------------------------------
@@ -58,6 +64,10 @@ void can_init(void)
 	gpio_config.Speed = GPIO_SPEED_FREQ_HIGH;
 	gpio_config.Alternate = GPIO_AF9_CAN;
 	HAL_GPIO_Init(CAN_PORT, &gpio_config);
+
+	// configure interrupts
+	HAL_NVIC_SetPriority(USB_LP_CAN_RX0_IRQn, 1, 1);
+	HAL_NVIC_EnableIRQ(USB_LP_CAN_RX0_IRQn);
 
 	// configure peripheral
 	hcan.Instance = CAN;
@@ -92,12 +102,14 @@ void can_init(void)
 // Deinitialize CAN peripheral
 void can_deinit(void)
 {
+	HAL_NVIC_EnableIRQ(USB_LP_CAN_RX0_IRQn);
 	HAL_CAN_Stop(&hcan);
 	HAL_GPIO_DeInit(CAN_PORT, CAN_PINS);
 }
 
 // Send a CAN message
-void can_send(uint8_t id, can_cmd_t cmd, uint8_t *payload, uint8_t len) {
+void can_send(uint8_t id, can_cmd_t cmd, uint8_t *payload, uint8_t len)
+{
 	CAN_TxHeaderTypeDef msg_header = {0};
 	msg_header.ExtId = cmd << 8 | id;
 	msg_header.IDE = CAN_ID_EXT;
@@ -121,25 +133,69 @@ void can_send(uint8_t id, can_cmd_t cmd, uint8_t *payload, uint8_t len) {
 }
 
 // Receive a CAN message
-bool can_receive(can_msg_t *msg) {
-	CAN_RxHeaderTypeDef msg_header;
-
-	if(HAL_CAN_GetRxFifoFillLevel(&hcan, CAN_RX_FIFO0) == 0) return false;
-
-	if(HAL_CAN_GetRxMessage(&hcan, CAN_RX_FIFO0, &msg_header, msg->payload) != HAL_OK)
+bool can_receive(can_msg_t *msg)
+{
+	if(buf_read_pos != buf_write_pos)
 	{
-		debug_printf("Error receiving CAN message");
-		return false;
+		// copy message from buffer
+		msg->cmd = buffer[buf_read_pos].cmd;
+		msg->id = buffer[buf_read_pos].id;
+		memcpy(msg->payload, buffer[buf_read_pos].payload, msg->len);
+		msg->len = buffer[buf_read_pos].len;
+
+		// increment read position
+		if(buf_read_pos == (CAN_BUF_SIZE - 1))
+			buf_read_pos = 0;
+		else
+			buf_read_pos++;
+
+		// blink status LED on activity
+		HAL_GPIO_WritePin(STATUS_PORT, STATUS_PIN, GPIO_PIN_RESET);
+		HAL_Delay(STATUS_BLINK_TIME);
+		HAL_GPIO_WritePin(STATUS_PORT, STATUS_PIN, GPIO_PIN_SET);
+
+		return true;
 	}
 
-	msg->cmd = msg_header.ExtId >> 8;
-	msg->id = msg_header.ExtId & 0xFF;
-	msg->len = msg_header.DLC;
+	return false;
+}
 
-	// blink status LED on activity
-	HAL_GPIO_WritePin(STATUS_PORT, STATUS_PIN, GPIO_PIN_RESET);
-	HAL_Delay(STATUS_BLINK_TIME);
-	HAL_GPIO_WritePin(STATUS_PORT, STATUS_PIN, GPIO_PIN_SET);
 
-	return true;
+//------------------------------------------------------------------------------
+// ISRs
+//------------------------------------------------------------------------------
+
+// CAN FIFO0 receive ISR
+void USB_LP_CAN_RX0_IRQHandler(void)
+{
+	if(HAL_CAN_GetRxFifoFillLevel(&hcan, CAN_RX_FIFO0) > 0)
+	{
+		CAN_RxHeaderTypeDef msg_header;
+		if(HAL_CAN_GetRxMessage(&hcan, CAN_RX_FIFO0, &msg_header, buffer[buf_write_pos].payload) == HAL_OK)
+		{
+			buffer[buf_write_pos].cmd = msg_header.ExtId >> 8;
+			buffer[buf_write_pos].id = msg_header.ExtId & 0xFF;
+			buffer[buf_write_pos].len = msg_header.DLC;
+
+			// increment write position
+			if(buf_write_pos == (CAN_BUF_SIZE - 1))
+				buf_write_pos = 0;
+			else
+				buf_write_pos++;
+
+			if(buf_read_pos == buf_write_pos)
+			{
+				if(buf_read_pos == (CAN_BUF_SIZE - 1))
+					buf_read_pos = 0;
+				else
+					buf_read_pos++;
+			}
+		}
+		else
+		{
+			//debug_printf("Error receiving CAN message");
+		}
+	}
+
+	HAL_CAN_IRQHandler(&hcan);
 }
