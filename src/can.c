@@ -65,10 +65,6 @@ void can_init(void)
 	gpio_config.Alternate = GPIO_AF9_CAN;
 	HAL_GPIO_Init(CAN_PORT, &gpio_config);
 
-	// configure interrupts
-	HAL_NVIC_SetPriority(USB_LP_CAN_RX0_IRQn, 1, 1);
-	HAL_NVIC_EnableIRQ(USB_LP_CAN_RX0_IRQn);
-
 	// configure peripheral
 	hcan.Instance = CAN;
 	hcan.Init.Prescaler = 2;
@@ -83,6 +79,11 @@ void can_init(void)
 	hcan.Init.ReceiveFifoLocked = DISABLE;
 	hcan.Init.TransmitFifoPriority = DISABLE;
 	debug_assert(HAL_CAN_Init(&hcan) == HAL_OK, "Failed to configure CAN");
+
+	// configure interrupts
+	__HAL_CAN_ENABLE_IT(&hcan, CAN_IT_RX_FIFO0_MSG_PENDING | CAN_IT_RX_FIFO0_FULL | CAN_IT_RX_FIFO0_OVERRUN);
+	HAL_NVIC_SetPriority(USB_LP_CAN_RX0_IRQn, 0, 1);
+	HAL_NVIC_EnableIRQ(USB_LP_CAN_RX0_IRQn);
 
 	// filter all msgs except extended-id with our can id
 	CAN_FilterTypeDef filter_config = {0};
@@ -102,7 +103,7 @@ void can_init(void)
 // Deinitialize CAN peripheral
 void can_deinit(void)
 {
-	HAL_NVIC_EnableIRQ(USB_LP_CAN_RX0_IRQn);
+	HAL_NVIC_DisableIRQ(USB_LP_CAN_RX0_IRQn);
 	HAL_CAN_Stop(&hcan);
 	HAL_GPIO_DeInit(CAN_PORT, CAN_PINS);
 }

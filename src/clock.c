@@ -68,6 +68,9 @@ void clock_init(void)
 	__HAL_RCC_TIM17_CLK_ENABLE();
 	__HAL_RCC_UART4_CLK_ENABLE();
 	__HAL_RCC_CAN1_CLK_ENABLE();
+
+	// set SysTick interrupt priority
+	HAL_NVIC_SetPriority(SysTick_IRQn, 1, 2);
 }
 
 

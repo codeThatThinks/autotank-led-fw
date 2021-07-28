@@ -34,6 +34,15 @@ int main(void)
 	uart_init();
 	can_init();
 
+	/*
+		Interrupt priorities:
+
+								Preempt		Sub
+		DMA1_Channel1_IRQn		0			0
+		DMA1_Channel3_IRQn		0			0
+		USB_LP_CAN_RX0_IRQn		0			1
+		SysTick_IRQn			1			2
+	*/
 
 #ifdef RGB_STRIP
 
