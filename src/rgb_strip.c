@@ -81,10 +81,10 @@ static DMA_HandleTypeDef hdmas[RGB_NUM_STRIPS];
 static TIM_HandleTypeDef htims[RGB_NUM_STRIPS];
 
 static uint8_t buffer[RGB_NUM_STRIPS][RGB_NUM_LEDS * BYTES_PER_LED];
-//static uint16_t dma_buffer[RGB_NUM_STRIPS][RESET_PULSE / PERIOD];
-static uint16_t dma_buffer[RGB_NUM_STRIPS][2 * 8 * BYTES_PER_LED];
-static rgb_strip_state_t state[RGB_NUM_STRIPS];
-static uint8_t led_index[RGB_NUM_STRIPS];
+//static volatile uint16_t dma_buffer[RGB_NUM_STRIPS][RESET_PULSE / PERIOD];
+static volatile uint16_t dma_buffer[RGB_NUM_STRIPS][2 * 8 * BYTES_PER_LED];
+static volatile rgb_strip_state_t state[RGB_NUM_STRIPS];
+static volatile uint8_t led_index[RGB_NUM_STRIPS];
 
 static uint16_t timer_arr_period;
 static uint16_t timer_ccr_one;
@@ -304,7 +304,7 @@ static void update(uint8_t strip)
 	while(state[strip] != STATE_INIT);
 
 	// set dma buffer to reset pulse (timer cc reg = 0)
-	memset(dma_buffer[strip], 0, sizeof(dma_buffer[0]));
+	for(size_t i = 0; i < (2 * 8 * BYTES_PER_LED); i++) dma_buffer[strip][i] = 0;
 
 	// move to start reset state and start DMA transfer
 	state[strip] = STATE_START_RESET;
@@ -343,7 +343,7 @@ static void dma_process_halfcomplete(uint8_t strip)
 			HAL_TIM_PWM_Stop_DMA(&htims[strip], TIM_CHANNEL_1);
 
 			// set dma buffer to reset pulse (timer cc reg = 0)
-			memset(dma_buffer[strip], 0, sizeof(dma_buffer[0]));
+			for(size_t i = 0; i < (2 * 8 * BYTES_PER_LED); i++) dma_buffer[strip][i] = 0;
 
 			// move to end reset state and start DMA transfer
 			state[strip] = STATE_END_RESET;
@@ -384,7 +384,7 @@ static void dma_process_complete(uint8_t strip)
 			HAL_TIM_PWM_Stop_DMA(&htims[strip], TIM_CHANNEL_1);
 
 			// set dma buffer to reset pulse (timer cc reg = 0)
-			memset(dma_buffer[strip], 0, sizeof(dma_buffer[0]));
+			for(size_t i = 0; i < (2 * 8 * BYTES_PER_LED); i++) dma_buffer[strip][i] = 0;
 
 			// move to end reset state and start DMA transfer
 			state[strip] = STATE_END_RESET;

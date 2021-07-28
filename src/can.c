@@ -38,9 +38,9 @@
 //------------------------------------------------------------------------------
 
 static CAN_HandleTypeDef hcan;
-static can_msg_t buffer[CAN_BUF_SIZE];
-static size_t buf_write_pos;
-static size_t buf_read_pos;
+static volatile can_msg_t buffer[CAN_BUF_SIZE];
+static volatile size_t buf_write_pos;
+static volatile size_t buf_read_pos;
 
 
 //------------------------------------------------------------------------------
@@ -136,29 +136,32 @@ void can_send(uint8_t id, can_cmd_t cmd, uint8_t *payload, uint8_t len)
 // Receive a CAN message
 bool can_receive(can_msg_t *msg)
 {
-	if(buf_read_pos != buf_write_pos)
+	HAL_NVIC_DisableIRQ(USB_LP_CAN_RX0_IRQn);
+
+	if(buf_read_pos == buf_write_pos)
 	{
-		// copy message from buffer
-		msg->cmd = buffer[buf_read_pos].cmd;
-		msg->id = buffer[buf_read_pos].id;
-		memcpy(msg->payload, buffer[buf_read_pos].payload, msg->len);
-		msg->len = buffer[buf_read_pos].len;
-
-		// increment read position
-		if(buf_read_pos == (CAN_BUF_SIZE - 1))
-			buf_read_pos = 0;
-		else
-			buf_read_pos++;
-
-		// blink status LED on activity
-		HAL_GPIO_WritePin(STATUS_PORT, STATUS_PIN, GPIO_PIN_RESET);
-		HAL_Delay(STATUS_BLINK_TIME);
-		HAL_GPIO_WritePin(STATUS_PORT, STATUS_PIN, GPIO_PIN_SET);
-
-		return true;
+		HAL_NVIC_EnableIRQ(USB_LP_CAN_RX0_IRQn);
+		return false;
 	}
 
-	return false;
+	// copy message from buffer
+	msg->cmd = buffer[buf_read_pos].cmd;
+	msg->id = buffer[buf_read_pos].id;
+	for(size_t i = 0; i < buffer[buf_read_pos].len; i++) msg->payload[i] = buffer[buf_read_pos].payload[i];
+	msg->len = buffer[buf_read_pos].len;
+
+	// increment read position
+	buf_read_pos++;
+	if(buf_read_pos >= CAN_BUF_SIZE) buf_read_pos = 0;
+
+	HAL_NVIC_EnableIRQ(USB_LP_CAN_RX0_IRQn);
+
+	// blink status LED on activity
+	HAL_GPIO_WritePin(STATUS_PORT, STATUS_PIN, GPIO_PIN_RESET);
+	HAL_Delay(STATUS_BLINK_TIME);
+	HAL_GPIO_WritePin(STATUS_PORT, STATUS_PIN, GPIO_PIN_SET);
+
+	return true;
 }
 
 
@@ -169,27 +172,27 @@ bool can_receive(can_msg_t *msg)
 // CAN FIFO0 receive ISR
 void USB_LP_CAN_RX0_IRQHandler(void)
 {
+	CAN_RxHeaderTypeDef msg_header;
+	uint8_t msg_payload[8];
+
 	if(HAL_CAN_GetRxFifoFillLevel(&hcan, CAN_RX_FIFO0) > 0)
 	{
-		CAN_RxHeaderTypeDef msg_header;
-		if(HAL_CAN_GetRxMessage(&hcan, CAN_RX_FIFO0, &msg_header, buffer[buf_write_pos].payload) == HAL_OK)
+		if(HAL_CAN_GetRxMessage(&hcan, CAN_RX_FIFO0, &msg_header, msg_payload) == HAL_OK)
 		{
 			buffer[buf_write_pos].cmd = msg_header.ExtId >> 8;
 			buffer[buf_write_pos].id = msg_header.ExtId & 0xFF;
+			for(size_t i = 0; i < msg_header.DLC; i++) buffer[buf_write_pos].payload[i] = msg_payload[i];
 			buffer[buf_write_pos].len = msg_header.DLC;
 
 			// increment write position
-			if(buf_write_pos == (CAN_BUF_SIZE - 1))
-				buf_write_pos = 0;
-			else
-				buf_write_pos++;
+			buf_write_pos++;
+			if(buf_write_pos >= CAN_BUF_SIZE) buf_write_pos = 0;
 
+			// bump read position if buffer is full
 			if(buf_read_pos == buf_write_pos)
 			{
-				if(buf_read_pos == (CAN_BUF_SIZE - 1))
-					buf_read_pos = 0;
-				else
-					buf_read_pos++;
+				buf_read_pos++;
+				if(buf_read_pos >= CAN_BUF_SIZE) buf_read_pos = 0;
 			}
 		}
 		else
